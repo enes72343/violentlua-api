@@ -4,8 +4,8 @@ import os
 from datetime import datetime
 
 app = Flask(__name__)
+app.url_map.strict_slashes = False  # ÖNEMLİ!
 
-# Environment variables'tan al
 db_config = {
     'host': os.environ.get('DB_HOST'),
     'user': os.environ.get('DB_USER'),
@@ -15,28 +15,22 @@ db_config = {
 
 @app.route('/', methods=['GET'])
 def index():
-    return jsonify({'status': 'API çalışıyor', 'message': 'ViolentLua Lisans API'})
+    return jsonify({'status': 'API çalışıyor'})
 
-@app.route('/api', methods=['GET', 'POST'])  # İKİSİNİ DE KABUL ET!
+@app.route('/api', methods=['GET', 'POST', 'OPTIONS'])
+@app.route('/api/', methods=['GET', 'POST', 'OPTIONS'])  # Her iki yolu da kabul et
 def api():
-    try:
-        # GET veya POST'tan verileri al
-        if request.method == 'GET':
-            data = request.args
-        else:
-            data = request.form
-            
-        action = data.get('action')
+    if request.method == 'OPTIONS':
+        return '', 200
         
-        if not action:
-            return jsonify({'valid': False, 'reason': 'Action parametresi gerekli'})
+    try:
+        data = request.args if request.method == 'GET' else request.form
+        action = data.get('action')
         
         if action == 'check':
             license_key = data.get('license_key')
             
-            if not license_key:
-                return jsonify({'valid': False, 'reason': 'Lisans kodu gerekli'})
-            
+            # Test bağlantısı
             conn = mysql.connector.connect(**db_config)
             cursor = conn.cursor(dictionary=True)
             
@@ -44,7 +38,6 @@ def api():
             license = cursor.fetchone()
             
             if license:
-                # Son kontrolü güncelle
                 cursor.execute("""
                     UPDATE licenses SET 
                     last_check = NOW(), 
@@ -53,33 +46,15 @@ def api():
                     sunucu_id = %s, 
                     sunucu_adi = %s 
                     WHERE license_key = %s
-                """, (
-                    data.get('discord_id'), 
-                    data.get('discord_username'), 
-                    data.get('sunucu_id'), 
-                    data.get('sunucu_adi'), 
-                    license_key
-                ))
+                """, (data.get('discord_id'), data.get('discord_username'), 
+                      data.get('sunucu_id'), data.get('sunucu_adi'), license_key))
                 conn.commit()
                 
-                cursor.close()
-                conn.close()
-                
-                return jsonify({
-                    'valid': True,
-                    'bot_name': license['bot_name'],
-                    'expires_at': license['expires_at'] or 'Sınırsız'
-                })
+                return jsonify({'valid': True})
             else:
-                cursor.close()
-                conn.close()
-                return jsonify({'valid': False, 'reason': '❌ Geçersiz lisans kodu'})
-        
-        return jsonify({'valid': False, 'reason': 'Geçersiz action'})
-        
+                return jsonify({'valid': False, 'reason': 'Geçersiz lisans'})
+                
+    except mysql.connector.Error as err:
+        return jsonify({'valid': False, 'reason': f'DB hatası: {err}'})
     except Exception as e:
-        return jsonify({'valid': False, 'reason': f'Sunucu hatası: {str(e)}'})
-
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+        return jsonify({'valid': False, 'reason': f'Hata: {str(e)}'})
