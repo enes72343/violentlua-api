@@ -5,12 +5,12 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-# MySQL bağlantısı (Infinityfree veritabanın)
+# Environment variables'tan al
 db_config = {
-    'host': 'sql103.infinityfree.com',
-    'user': 'if0_41298601',
-    'password': 'at0oigki2eR8d',
-    'database': 'if0_41298601_baba'
+    'host': os.environ.get('DB_HOST'),
+    'user': os.environ.get('DB_USER'),
+    'password': os.environ.get('DB_PASS'),
+    'database': os.environ.get('DB_NAME')
 }
 
 @app.route('/', methods=['GET'])
@@ -33,7 +33,6 @@ def api():
             license = cursor.fetchone()
             
             if license:
-                # Son kontrolü güncelle
                 cursor.execute("UPDATE licenses SET last_check = NOW(), discord_id = %s, discord_username = %s, sunucu_id = %s, sunucu_adi = %s WHERE license_key = %s",
                              (data.get('discord_id'), data.get('discord_username'), data.get('sunucu_id'), data.get('sunucu_adi'), license_key))
                 conn.commit()
@@ -44,7 +43,7 @@ def api():
                     'expires_at': license['expires_at'] or 'Sınırsız'
                 })
             else:
-                return jsonify({'valid': False, 'reason': 'Geçersiz lisans kodu'})
+                return jsonify({'valid': False, 'reason': '❌ Geçersiz lisans kodu'})
         
         cursor.close()
         conn.close()
