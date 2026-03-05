@@ -17,25 +17,53 @@ db_config = {
 def index():
     return jsonify({'status': 'API çalışıyor', 'message': 'ViolentLua Lisans API'})
 
-@app.route('/api', methods=['POST'])
+@app.route('/api', methods=['GET', 'POST'])  # İKİSİNİ DE KABUL ET!
 def api():
     try:
-        data = request.form
+        # GET veya POST'tan verileri al
+        if request.method == 'GET':
+            data = request.args
+        else:
+            data = request.form
+            
         action = data.get('action')
         
-        conn = mysql.connector.connect(**db_config)
-        cursor = conn.cursor(dictionary=True)
+        if not action:
+            return jsonify({'valid': False, 'reason': 'Action parametresi gerekli'})
         
         if action == 'check':
             license_key = data.get('license_key')
+            
+            if not license_key:
+                return jsonify({'valid': False, 'reason': 'Lisans kodu gerekli'})
+            
+            conn = mysql.connector.connect(**db_config)
+            cursor = conn.cursor(dictionary=True)
             
             cursor.execute("SELECT * FROM licenses WHERE license_key = %s AND status = 'active'", (license_key,))
             license = cursor.fetchone()
             
             if license:
-                cursor.execute("UPDATE licenses SET last_check = NOW(), discord_id = %s, discord_username = %s, sunucu_id = %s, sunucu_adi = %s WHERE license_key = %s",
-                             (data.get('discord_id'), data.get('discord_username'), data.get('sunucu_id'), data.get('sunucu_adi'), license_key))
+                # Son kontrolü güncelle
+                cursor.execute("""
+                    UPDATE licenses SET 
+                    last_check = NOW(), 
+                    discord_id = %s, 
+                    discord_username = %s, 
+                    sunucu_id = %s, 
+                    sunucu_adi = %s 
+                    WHERE license_key = %s
+                """, (
+                    data.get('discord_id'), 
+                    data.get('discord_username'), 
+                    data.get('sunucu_id'), 
+                    data.get('sunucu_adi'), 
+                    license_key
+                ))
                 conn.commit()
+                
+                cursor.close()
+                conn.close()
                 
                 return jsonify({
                     'valid': True,
@@ -43,11 +71,11 @@ def api():
                     'expires_at': license['expires_at'] or 'Sınırsız'
                 })
             else:
+                cursor.close()
+                conn.close()
                 return jsonify({'valid': False, 'reason': '❌ Geçersiz lisans kodu'})
         
-        cursor.close()
-        conn.close()
-        return jsonify({'error': 'Geçersiz action'})
+        return jsonify({'valid': False, 'reason': 'Geçersiz action'})
         
     except Exception as e:
         return jsonify({'valid': False, 'reason': f'Sunucu hatası: {str(e)}'})
